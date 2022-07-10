@@ -1,0 +1,378 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: SAM template for creating a Serverless FileServer using Amazon EFS, AWS Lambda, Amazon Cognito, AWS Amplify
+
+Parameters:
+  VpcCIDR:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: This is the CIDR that will be used to create the VPC for Serverless FileServer.
+
+  PrivateSubnetACIDR:
+    Type: String
+    Default: 10.0.1.0/24
+    Description: This is the CIDR that will be used to create Subnet A inside the Serverless FileServer VPC.
+
+  SubnetAAZ:
+    Type: String
+    Default: ap-southeast-2a
+    Description: This is the Availability Zone inside which Subnet A will be created.
+
+  PrivateSubnetBCIDR:
+    Type: String
+    Default: 10.0.3.0/24
+    Description: This is the CIDR that will be used to create Subnet B inside the Serverless FileServer VPC.
+
+  SubnetBAZ:
+    Type: String
+    Default: ap-southeast-2b
+    Description: This is the Availability Zone inside which Subnet B will be created.
+
+  ApiGWStageName:
+    Type: String
+    Default: Prod
+    Description: This is the name for the API Gateway Stage that will be created.
+
+  SFSCognitoUserPoolDomainName:
+    Type: String
+    Default: serverlessfileserver
+    Description: This is the name of the Cognito Pool Domain that will be created.
+
+  SFSCognitoUserPoolName:
+    Type: String
+    Default: serverlessfileserverpool
+    Description: This is the name of the Cognito User Pool that will be created.
+
+  SFSCognitoUserPoolClientName:
+    Type: String
+    Default: serverlessfileserverclient
+    Description: This is the name of the Cognito User Pool Client that will be created.
+
+  AmplifyPortalURL:
+    Type: String
+    Default: https://serverlessfileserver.amplifyapp.com
+    Description: This is the Amplify Frontend's Portal URL
+
+  LambdaEFSLocalMountPath:
+    Type: String
+    Default: /mnt/efs
+    Description: This is the local mount path that will be used when the EFS filesystem is mounted on Lambda
+
+Resources:
+  # Deploy the VPC and Subnets that will be used by Serverless FileServer
+  ServerlessFileServerVPC:
+    Type: AWS::EC2::VPC
+    Properties: 
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
+      Tags: 
+        - Key: Name
+          Value: ServerlessFileServerVPC
+
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties: 
+      AvailabilityZone: !Ref SubnetAAZ
+      CidrBlock: !Ref PrivateSubnetACIDR
+      MapPublicIpOnLaunch: false
+      Tags: 
+        - Key: Name
+          Value: PrivateSubnetA
+      VpcId: !Ref ServerlessFileServerVPC
+
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties: 
+      AvailabilityZone: !Ref SubnetBAZ
+      CidrBlock: !Ref PrivateSubnetBCIDR
+      MapPublicIpOnLaunch: false
+      Tags: 
+        - Key: Name
+          Value: PrivateSubnetB
+      VpcId: !Ref ServerlessFileServerVPC
+
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Ref SFSCognitoUserPoolName
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+        UnusedAccountValidityDays: 90
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+      UsernameAttributes:
+        - email
+      Schema:
+        - AttributeDataType: String
+          Name: email
+          Required: false
+  
+  CognitoUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref SFSCognitoUserPoolDomainName
+      UserPoolId: !Ref CognitoUserPool
+  
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref CognitoUserPool
+      ClientName: !Ref SFSCognitoUserPoolClientName
+      GenerateSecret: false
+  
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      EndpointConfiguration: REGIONAL
+      Name: ServerlessFileServerApiGW
+      StageName: !Ref ApiGWStageName
+      Cors:
+        AllowMethods: "'GET, POST'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin:  "'*'"
+      BinaryMediaTypes:
+        - 'application/pdf'
+        - 'text/plain'
+        - 'image/png'
+        - 'image/jpg'
+      Auth:
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !GetAtt CognitoUserPool.Arn
+            Identity:
+              Header: 'Authorization'
+              ReauthorizeEvery: 30
+
+  EmptyApiGatewayModel:
+    DependsOn: ApiGateway
+    Type: 'AWS::ApiGateway::Model'
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ContentType: application/json
+      Description: This is a default empty schema model
+      Name: Empty
+      Schema:
+        $schema: 'http://json-schema.org/draft-04/schema#'
+        title: Empty Schema
+        type: object
+
+  ErrorApiGatewayModel:
+    DependsOn: ApiGateway
+    Type: 'AWS::ApiGateway::Model'
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ContentType: application/json
+      Description: This is a default error schema model
+      Name: Error
+      Schema:
+        $schema: 'http://json-schema.org/draft-04/schema#'
+        title: Error Schema
+        type: object
+        properties:
+          message:
+            type: string
+
+  ServerlessFileServerAPIGWUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    Properties:
+      ApiStages:
+        - ApiId: !Ref ApiGateway
+          Stage: !Ref ApiGWStageName
+        - ApiId: !Ref ApiGateway
+          Stage: Stage #this is a bug with SAM. It also creates s 'Stage' Stage
+      Description: Usage plan for Internet Fileshare Api Gateway
+      Quota:
+        Limit: 1000
+        Offset: 0
+        Period: DAY
+      Throttle:
+        RateLimit: 5
+        BurstLimit: 10
+      UsagePlanName: ServerlessFileServerAPIGWUsagePlan
+    DependsOn: 
+      - ApiGatewayStage
+
+  ServerlessFileServerEFSSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: Security Group to allow EFS access
+      GroupName: ServerlessFileServerEFSSG
+      VpcId: !Ref ServerlessFileServerVPC
+      Tags: 
+        - Key: Name
+          Value: ServerlessFileServerEFSSG
+    
+  ServerlessFileServerEFSSGRule1:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow all traffic between resources attached to this security group
+      GroupId: !Ref ServerlessFileServerEFSSG
+      IpProtocol: -1
+      SourceSecurityGroupId: !Ref ServerlessFileServerEFSSG
+
+  ServerlessFileServerEFS:
+    Type: 'AWS::EFS::FileSystem'
+    Properties:
+      PerformanceMode: generalPurpose
+      Encrypted: true
+      FileSystemTags:
+        - Key: Name
+          Value: ServerlessFileServerEFS
+
+  EFSMountTargetPrivateSubnetA:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref ServerlessFileServerEFS
+      SubnetId: !Ref PrivateSubnetA
+      SecurityGroups:
+      - !GetAtt ServerlessFileServerEFSSG.GroupId
+
+  EFSMountTargetPrivateSubnetB:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref ServerlessFileServerEFS
+      SubnetId: !Ref PrivateSubnetB
+      SecurityGroups:
+      - !GetAtt ServerlessFileServerEFSSG.GroupId
+
+  EFSAccessPoint:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId: !Ref ServerlessFileServerEFS
+      PosixUser:
+        Uid: "1000"
+        Gid: "1000"
+      RootDirectory:
+        CreationInfo:
+          OwnerGid: "1000"
+          OwnerUid: "1000"
+          Permissions: "0777"
+        Path: "/serverlessfileserver"
+
+  ServerlessFileServerListFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: This function lists the files in a folder
+      Handler: src/ServerlessFileServer-list.lambda_handler
+      Runtime: python3.7
+      Timeout: 300
+      FileSystemConfigs:
+        - Arn:  !GetAtt EFSAccessPoint.Arn
+          LocalMountPath: !Ref LambdaEFSLocalMountPath
+      VpcConfig: 
+        SecurityGroupIds:
+          - !GetAtt ServerlessFileServerEFSSG.GroupId
+        SubnetIds:
+          - !Ref PrivateSubnetA
+          - !Ref PrivateSubnetB
+      Policies:
+      - AWSLambdaBasicExecutionRole
+      - AWSLambdaVPCAccessExecutionRole
+      Environment:
+        Variables:
+          AMPLIFY_PORTAL_URL: !Ref AmplifyPortalURL
+          EFS_MOUNT_PATH: !Ref LambdaEFSLocalMountPath
+      Events:
+        HttpGetDirListing:
+          Type: Api
+          Properties:
+            Path: /list
+            Method: get
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+    DependsOn:
+      - EFSMountTargetPrivateSubnetA
+      - EFSMountTargetPrivateSubnetB
+
+  ServerlessFileServerDownloadFunction:
+      Type: AWS::Serverless::Function
+      Properties:
+        Description: This function allows user to download files to local computer
+        Handler: src/ServerlessFileServer-download.lambda_handler
+        Runtime: python3.7
+        Timeout: 300
+        FileSystemConfigs:
+          - Arn:  !GetAtt EFSAccessPoint.Arn
+            LocalMountPath: !Ref LambdaEFSLocalMountPath
+        VpcConfig: 
+          SecurityGroupIds:
+            - !GetAtt ServerlessFileServerEFSSG.GroupId
+          SubnetIds:
+            - !Ref PrivateSubnetA
+            - !Ref PrivateSubnetB
+        Policies:
+        - AWSLambdaBasicExecutionRole
+        - AWSLambdaVPCAccessExecutionRole
+        Environment:
+          Variables:
+            AMPLIFY_PORTAL_URL: !Ref AmplifyPortalURL
+            EFS_MOUNT_PATH: !Ref LambdaEFSLocalMountPath
+        Events:
+          HttpGetDirListing:
+            Type: Api
+            Properties:
+              Path: /download
+              Method: get
+              RestApiId: !Ref ApiGateway
+              Auth:
+                Authorizer: CognitoAuthorizer
+      DependsOn:
+        - EFSMountTargetPrivateSubnetA
+        - EFSMountTargetPrivateSubnetB
+
+  ServerlessFileServerUploadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: This function allows users to upload from their local computer to the Serverless FileServer
+      Handler: src/ServerlessFileServer-upload.lambda_handler
+      Runtime: python3.7
+      Timeout: 300
+      FileSystemConfigs:
+        - Arn:  !GetAtt EFSAccessPoint.Arn
+          LocalMountPath: !Ref LambdaEFSLocalMountPath
+      VpcConfig: 
+        SecurityGroupIds:
+          - !GetAtt ServerlessFileServerEFSSG.GroupId
+        SubnetIds:
+          - !Ref PrivateSubnetA
+          - !Ref PrivateSubnetB
+      Policies:
+      - AWSLambdaBasicExecutionRole
+      - AWSLambdaVPCAccessExecutionRole
+      Environment:
+        Variables:
+          AMPLIFY_PORTAL_URL: !Ref AmplifyPortalURL
+          EFS_MOUNT_PATH: !Ref LambdaEFSLocalMountPath
+      Events:
+        HttpGetDirListing:
+          Type: Api
+          Properties:
+            Path: /upload
+            Method: post
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+    DependsOn:
+      - EFSMountTargetPrivateSubnetA
+      - EFSMountTargetPrivateSubnetB
+  
+Outputs:
+  CognitoUserPoolId:
+    Description: "Amazon Cognito User Pool Id"
+    Value: !Ref CognitoUserPool
+  CognitoUserPoolWebClientId:
+    Description: "Amazon Cognito User Pool WebClient Id"
+    Value: !Ref CognitoUserPoolClient
+  AmazonCognitoDomain:
+      Description: "Amazon Cognito Domain"
+      Value: !Sub "https://${SFSCognitoUserPoolDomainName}.auth.${AWS::Region}.amazoncognito.com"
+  APIGatewayURL:
+    Description: "API Gateway endpoint URL"
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${ApiGWStageName}"
+  
+  
+        
