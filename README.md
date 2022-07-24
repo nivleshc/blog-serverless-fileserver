@@ -6,7 +6,10 @@ The frontend is deployed using AWS Amplify.
 
 The solution uses AWS Serverless Application Model (SAM) to deploy resources in to an AWS Account. The AWS Lambda function is written in Python 3.7.
 
-Please refer to <a href="https://nivleshc.wordpress.com/2022/07/10/create-a-serverless-fileserver-using-amazon-efs-amazon-api-gateway-amazon-cognito-and-aws-lambda-the-backend/" target="_blank">https://nivleshc.wordpress.com/2022/07/10/create-a-serverless-fileserver-using-amazon-efs-amazon-api-gateway-amazon-cognito-and-aws-lambda-the-backend/</a> for more details. <br><br>
+Please refer to  
+<a href="https://nivleshc.wordpress.com/2022/07/10/create-a-serverless-fileserver-using-amazon-efs-amazon-api-gateway-amazon-cognito-and-aws-lambda-the-backend/" target="_blank">https://nivleshc.wordpress.com/2022/07/10/create-a-serverless-fileserver-using-amazon-efs-amazon-api-gateway-amazon-cognito-and-aws-lambda-the-backend/</a> for more backend details. <br><br>
+
+<a href="https://nivleshc.wordpress.com/2022/07/24/create-a-serverless-fileserver-using-amazon-efs-amazon-api-gateway-amazon-cognito-and-aws-lambda-the-frontend/" target="_blank">https://nivleshc.wordpress.com/2022/07/24/create-a-serverless-fileserver-using-amazon-efs-amazon-api-gateway-amazon-cognito-and-aws-lambda-the-frontend/</a> for more frontend details.
   
 # Backend  
 ## Preparation
@@ -50,3 +53,6 @@ To delete all resources provisioned in AWS, run the following command. At the pr
 ```
 make delete
 ```
+
+# Frontend
+Follow the instructions at <a href="https://nivleshc.wordpress.com/2022/07/24/create-a-serverless-fileserver-using-amazon-efs-amazon-api-gateway-amazon-cognito-and-aws-lambda-the-frontend/" target="_blank">https://nivleshc.wordpress.com/2022/07/24/create-a-serverless-fileserver-using-amazon-efs-amazon-api-gateway-amazon-cognito-and-aws-lambda-the-frontend/</a> to deploy the frontend.

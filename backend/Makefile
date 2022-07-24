@@ -1,34 +1,49 @@
 #define variables
 aws_profile = myawsprofile
 aws_s3_bucket = mys3bucket
-aws_s3_bucket_prefix = serverless
-aws_stack_name = serverlessfileserver
+PROJECT_NAME = serverlessfileserver
+aws_s3_bucket_prefix = ${PROJECT_NAME}
+aws_stack_name = sam-${PROJECT_NAME}
 aws_stack_iam_capabilities = CAPABILITY_IAM CAPABILITY_NAMED_IAM
 sam_package_template_file = template.yaml
 sam_package_output_template_file = package.yaml
+AMPLIFY_PORTAL_URL = https://serverlessfileserver.amplifyapp.com
 
 .PHONY: all usage package deploy update validate clean
 
 all: usage
 
 usage:
+	@echo
 	@echo make package - package the sam application and copy it to the s3 bucket [s3://${aws_s3_bucket}/${aws_s3_bucket_prefix}/]
 	@echo make deploy  - deploy the packaged sam application to AWS
 	@echo make update  - package the sam application and then deploy it to AWS
 	@echo make validate - validate template file [${sam_package_template_file}]
 	@echo make clean   - delete local package.yml file
 	@echo make delete  - delete the AWS CloudFormation Stack that was created by this AWS SAM template
+	@echo
+	@echo Parameters declared
+	@echo AMPLIFY_PORTAL_URL = ${AMPLIFY_PORTAL_URL}
 
 package:
 	sam package --template-file ${sam_package_template_file} --output-template-file ${sam_package_output_template_file} --s3-bucket ${aws_s3_bucket} --s3-prefix ${aws_s3_bucket_prefix} --profile ${aws_profile}
 
 deploy:
-	sam deploy --template-file ${sam_package_output_template_file} --stack-name ${aws_stack_name} --capabilities ${aws_stack_iam_capabilities} --profile ${aws_profile}
+	sam deploy \
+	--template-file ${sam_package_output_template_file} \
+	--stack-name ${aws_stack_name} \
+	--capabilities ${aws_stack_iam_capabilities} \
+	--profile ${aws_profile} \
+	--parameter-overrides \
+	'ParameterKey=AmplifyPortalURL,ParameterValue=${AMPLIFY_PORTAL_URL}' \
+	'ParameterKey=SFSCognitoUserPoolDomainName,ParameterValue=${PROJECT_NAME}' \
+	'ParameterKey=SFSCognitoUserPoolName,ParameterValue=${PROJECT_NAME}pool' \
+	'ParameterKey=SFSCognitoUserPoolClientName,ParameterValue=${PROJECT_NAME}client'
 
 update:
 	make clean
-	sam package --template-file ${sam_package_template_file} --output-template-file ${sam_package_output_template_file} --s3-bucket ${aws_s3_bucket}  --s3-prefix ${aws_s3_bucket_prefix} --profile ${aws_profile}
-	sam deploy --template-file ${sam_package_output_template_file} --stack-name ${aws_stack_name} --capabilities ${aws_stack_iam_capabilities} --profile ${aws_profile}
+	make package
+	make deploy
 
 validate:
 	sam validate --template-file ${sam_package_template_file}

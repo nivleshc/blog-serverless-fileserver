@@ -10,9 +10,7 @@ def lambda_handler(event, context):
 
     # define variables and constants -- end
     
-
     # check if the user has provided a subfolder name. If yes then append that to the rootDir. Otherwise defaul to rootDir
-    
     try:
         folderName = event['queryStringParameters']['folderName']
         print("User provided folderName:" + folderName)
